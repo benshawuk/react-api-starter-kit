@@ -3,6 +3,8 @@ import { LoaderCircle } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { authenticatedFetch } from '@/lib/auth-utils';
+
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,13 +24,8 @@ export default function ConfirmPassword() {
         setErrors({});
 
         try {
-            const response = await fetch('/api/confirm-password', {
+            const response = await authenticatedFetch('/api/confirm-password', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-                },
                 body: JSON.stringify({ password: data.password }),
             });
 

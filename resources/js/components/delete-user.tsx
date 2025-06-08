@@ -2,6 +2,7 @@ import { FormEventHandler, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import InputError from '@/components/input-error';
+import { authenticatedFetch } from '@/lib/auth-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,13 +26,8 @@ export default function DeleteUser() {
         setErrors({});
 
         try {
-            const response = await fetch('/api/profile', {
+            const response = await authenticatedFetch('/api/profile', {
                 method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-                },
                 body: JSON.stringify(data),
             });
 

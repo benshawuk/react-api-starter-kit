@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AuthLayout from '@/layouts/auth-layout';
+import { getCsrfToken, getCsrfTokenFromCookie } from '@/lib/auth-utils';
 
 export default function ForgotPassword() {
     const [data, setData] = useState({ email: '' });
@@ -21,13 +22,21 @@ export default function ForgotPassword() {
         setStatus('');
 
         try {
-            const response = await fetch('/api/forgot-password', {
+            // Get CSRF token first
+            await getCsrfToken();
+
+            // Use FormData for Laravel Breeze compatibility
+            const formData = new FormData();
+            formData.append('email', data.email);
+
+            const response = await fetch('/forgot-password', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     Accept: 'application/json',
+                    'X-XSRF-TOKEN': getCsrfTokenFromCookie() || '',
                 },
-                body: JSON.stringify({ email: data.email }),
+                credentials: 'include',
+                body: formData,
             });
 
             const responseData = await response.json();

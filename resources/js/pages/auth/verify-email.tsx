@@ -2,6 +2,8 @@ import { LoaderCircle } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { authenticatedFetch } from '@/lib/auth-utils';
+
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/auth-context';
 import AuthLayout from '@/layouts/auth-layout';
@@ -18,13 +20,8 @@ export default function VerifyEmail() {
         setStatus('');
 
         try {
-            const response = await fetch('/api/email/verification-notification', {
+            const response = await authenticatedFetch('/api/email/verification-notification', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-                },
             });
 
             const responseData = await response.json();

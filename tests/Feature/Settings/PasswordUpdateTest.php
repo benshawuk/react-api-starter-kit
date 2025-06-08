@@ -8,18 +8,16 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 test('password can be updated', function () {
     $user = User::factory()->create();
 
+    // Use the API route that still exists
     $response = $this
         ->actingAs($user)
-        ->from('/settings/password')
-        ->put('/settings/password', [
+        ->putJson('/api/password', [
             'current_password' => 'password',
             'password' => 'new-password',
             'password_confirmation' => 'new-password',
         ]);
 
-    $response
-        ->assertSessionHasNoErrors()
-        ->assertRedirect('/settings/password');
+    $response->assertOk();
 
     expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
 });
@@ -27,16 +25,15 @@ test('password can be updated', function () {
 test('correct password must be provided to update password', function () {
     $user = User::factory()->create();
 
+    // Use the API route that still exists
     $response = $this
         ->actingAs($user)
-        ->from('/settings/password')
-        ->put('/settings/password', [
+        ->putJson('/api/password', [
             'current_password' => 'wrong-password',
             'password' => 'new-password',
             'password_confirmation' => 'new-password',
         ]);
 
-    $response
-        ->assertSessionHasErrors('current_password')
-        ->assertRedirect('/settings/password');
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['current_password']);
 });

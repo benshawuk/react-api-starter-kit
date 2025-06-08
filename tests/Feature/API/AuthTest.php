@@ -14,23 +14,23 @@ class AuthTest extends TestCase
 
     public function test_user_can_register()
     {
-        $response = $this->postJson('/api/register', [
+        // Get CSRF token first
+        $this->get('/sanctum/csrf-cookie');
+
+        $response = $this->post('/register', [
             'name' => 'Test User',
             'email' => 'test@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
         ]);
 
-        $response->assertStatus(201)
-            ->assertJsonStructure([
-                'message',
-                'user' => ['id', 'name', 'email'],
-                'token'
-            ]);
+                $response->assertNoContent(); // Laravel Breeze returns 204 for successful registration
 
         $this->assertDatabaseHas('users', [
             'email' => 'test@example.com'
         ]);
+
+        $this->assertAuthenticated();
     }
 
     public function test_user_can_login()
@@ -40,28 +40,31 @@ class AuthTest extends TestCase
             'password' => Hash::make('password123'),
         ]);
 
-        $response = $this->postJson('/api/login', [
+        // Get CSRF token first
+        $this->get('/sanctum/csrf-cookie');
+
+        $response = $this->post('/login', [
             'email' => 'test@example.com',
             'password' => 'password123',
         ]);
 
-        $response->assertOk()
-            ->assertJsonStructure([
-                'message',
-                'user' => ['id', 'name', 'email'],
-                'token'
-            ]);
+        $response->assertNoContent(); // Laravel Breeze returns 204 for successful login
+        $this->assertAuthenticated();
+        $this->assertAuthenticatedAs($user);
     }
 
     public function test_user_cannot_login_with_invalid_credentials()
     {
-        $response = $this->postJson('/api/login', [
+        // Get CSRF token first
+        $this->get('/sanctum/csrf-cookie');
+
+        $response = $this->post('/login', [
             'email' => 'wrong@example.com',
             'password' => 'wrongpassword',
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['email']);
+        $response->assertSessionHasErrors(['email']);
+        $this->assertGuest();
     }
 
     public function test_authenticated_user_can_access_protected_route()
@@ -88,11 +91,14 @@ class AuthTest extends TestCase
     public function test_user_can_logout()
     {
         $user = User::factory()->create();
-        Sanctum::actingAs($user);
+        $this->actingAs($user); // Use session-based auth for test
 
-        $response = $this->postJson('/api/logout');
+        // Get CSRF token first
+        $this->get('/sanctum/csrf-cookie');
 
-        $response->assertOk()
-            ->assertJson(['message' => 'Logout successful']);
+        $response = $this->post('/logout');
+
+        $response->assertNoContent(); // Laravel Breeze returns 204 for successful logout
+        $this->assertGuest();
     }
 }

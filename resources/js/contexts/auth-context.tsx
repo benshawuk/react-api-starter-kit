@@ -1,14 +1,13 @@
+import { authenticatedFetch, getCsrfToken, getCsrfTokenFromCookie } from '@/lib/auth-utils';
 import { User } from '@/types';
 import { createContext, useContext, useEffect, useState } from 'react';
 
 interface AuthContextType {
     user: User | null;
-    token: string | null;
     login: (email: string, password: string) => Promise<void>;
     register: (name: string, email: string, password: string, passwordConfirmation: string) => Promise<void>;
     logout: () => Promise<void>;
     updateProfile: (data: { name: string; email: string }) => Promise<void>;
-    setAuthData: (token: string, user: User) => void;
     loading: boolean;
     isAuthenticated: boolean;
     loggingOut: boolean;
@@ -21,26 +20,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
-    const [token, setToken] = useState<string | null>(localStorage.getItem('auth_token'));
     const [loading, setLoading] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
     const [intendedUrl, setIntendedUrl] = useState<string | null>(null);
 
+    // API call helper for session-based authentication
     const apiCall = async (url: string, options: RequestInit = {}) => {
-        const baseUrl = import.meta.env.VITE_API_URL || '';
-        const headers = {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            ...(token && { Authorization: `Bearer ${token}` }),
-            ...options.headers,
-        };
-
-        const response = await fetch(`${baseUrl}/api${url}`, {
-            ...options,
-            headers,
-        });
+        const response = await authenticatedFetch(url, options);
 
         if (!response.ok) {
+            if (response.status === 204) return null;
+
             const errorData = await response.json().catch(() => ({ message: 'Network error' }));
 
             // If we have validation errors, create a custom error object
@@ -59,22 +49,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             throw new Error(errorData.message || 'Request failed');
         }
 
+        if (response.status === 204) return null;
         return response.json();
     };
 
-    const fetchUser = async () => {
-        if (!token) {
-            setLoading(false);
-            return;
-        }
+    // Fetch user data
+    const fetchUser = async (silent = false) => {
+        if (!silent) setLoading(true);
 
         try {
-            const userData = await apiCall('/user');
+            const userData = await apiCall('/api/user');
             setUser(userData);
         } catch (error) {
             console.error('Failed to fetch user:', error);
-            localStorage.removeItem('auth_token');
-            setToken(null);
+            setUser(null);
         } finally {
             setLoading(false);
         }
@@ -83,16 +71,65 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const login = async (email: string, password: string) => {
         setLoading(true);
         try {
-            const response = await apiCall('/login', {
+            // Get CSRF token first
+            await getCsrfToken();
+
+            // Small delay to ensure cookie is set
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            // Get the token from cookie
+            const csrfToken = getCsrfTokenFromCookie();
+
+            // Login request using FormData (not JSON!)
+            const formData = new FormData();
+            formData.append('email', email);
+            formData.append('password', password);
+
+            const loginResult = await fetch('/login', {
+                // Web route, not /api/login
                 method: 'POST',
-                body: JSON.stringify({ email, password }),
+                body: formData, // FormData, not JSON
+                credentials: 'include',
+                headers: {
+                    Accept: 'application/json',
+                    ...(csrfToken && { 'X-XSRF-TOKEN': csrfToken }),
+                },
             });
 
-            const { token: newToken, user: userData } = response;
-            setToken(newToken);
-            setUser(userData);
-            localStorage.setItem('auth_token', newToken);
-            setLoading(false);
+            if (!loginResult.ok) {
+                console.error('Login failed with status:', loginResult.status); // Debug log
+
+                let errorData;
+                try {
+                    errorData = await loginResult.json();
+                } catch {
+                    errorData = { message: `Login failed with status ${loginResult.status}` };
+                }
+
+                console.error('Error data:', errorData); // Debug log
+
+                // Handle specific 419 CSRF error
+                if (loginResult.status === 419) {
+                    throw new Error('CSRF token mismatch. Please refresh the page and try again.');
+                }
+
+                // Handle validation errors
+                if (errorData.errors) {
+                    const validationError = new Error('Validation failed');
+                    const formattedErrors: Record<string, string> = {};
+                    Object.keys(errorData.errors).forEach((key) => {
+                        const errorArray = errorData.errors[key];
+                        formattedErrors[key] = Array.isArray(errorArray) ? errorArray[0] : errorArray;
+                    });
+                    (validationError as any).errors = formattedErrors;
+                    throw validationError;
+                }
+
+                throw new Error(errorData.message || 'Login failed');
+            }
+
+            // Fetch user data after successful login
+            await fetchUser();
         } catch (error: any) {
             setLoading(false);
             throw error;
@@ -102,21 +139,52 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const register = async (name: string, email: string, password: string, passwordConfirmation: string) => {
         setLoading(true);
         try {
-            const response = await apiCall('/register', {
+            // Get CSRF token first
+            await getCsrfToken();
+
+            // Register request using FormData
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('email', email);
+            formData.append('password', password);
+            formData.append('password_confirmation', passwordConfirmation);
+
+            const registerResult = await fetch('/register', {
+                // Web route, not /api/register
                 method: 'POST',
-                body: JSON.stringify({
-                    name,
-                    email,
-                    password,
-                    password_confirmation: passwordConfirmation,
-                }),
+                body: formData,
+                credentials: 'include',
+                headers: {
+                    Accept: 'application/json',
+                    'X-XSRF-TOKEN': getCsrfTokenFromCookie() || '',
+                },
             });
 
-            const { token: newToken, user: userData } = response;
-            setToken(newToken);
-            setUser(userData);
-            localStorage.setItem('auth_token', newToken);
-            setLoading(false);
+            if (!registerResult.ok) {
+                let errorData;
+                try {
+                    errorData = await registerResult.json();
+                } catch {
+                    errorData = { message: 'Registration failed' };
+                }
+
+                // Handle validation errors
+                if (errorData.errors) {
+                    const validationError = new Error('Validation failed');
+                    const formattedErrors: Record<string, string> = {};
+                    Object.keys(errorData.errors).forEach((key) => {
+                        const errorArray = errorData.errors[key];
+                        formattedErrors[key] = Array.isArray(errorArray) ? errorArray[0] : errorArray;
+                    });
+                    (validationError as any).errors = formattedErrors;
+                    throw validationError;
+                }
+
+                throw new Error(errorData.message || 'Registration failed');
+            }
+
+            // Fetch user data after successful registration
+            await fetchUser();
         } catch (error: any) {
             setLoading(false);
             throw error;
@@ -126,47 +194,55 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const logout = async () => {
         setLoggingOut(true);
 
-        if (token) {
-            try {
-                await apiCall('/logout', { method: 'POST' });
-            } catch (error) {
-                console.error('Logout error:', error);
-            }
+        try {
+            // Get CSRF token first
+            await getCsrfToken();
+
+            await fetch('/logout', {
+                // Web route, not /api/logout
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    Accept: 'application/json',
+                    'X-XSRF-TOKEN': getCsrfTokenFromCookie() || '',
+                },
+            });
+        } catch (error) {
+            console.error('Logout error:', error);
         }
 
         setUser(null);
-        setToken(null);
-        localStorage.removeItem('auth_token');
         setLoggingOut(false);
     };
 
     const updateProfile = async (data: { name: string; email: string }) => {
-        const response = await apiCall('/profile', {
+        const response = await apiCall('/api/profile', {
             method: 'PATCH',
             body: JSON.stringify(data),
         });
         setUser(response.user);
     };
 
-    const setAuthData = (newToken: string, userData: User) => {
-        setToken(newToken);
-        setUser(userData);
-        localStorage.setItem('auth_token', newToken);
-        setLoading(false);
-    };
-
+    // Fix initial user fetching logic - only fetch on protected routes
     useEffect(() => {
-        fetchUser();
-    }, [token]);
+        // Check if we're on a protected route that requires authentication
+        const isPublicRoute = ['/login', '/register', '/forgot-password', '/reset-password', '/'].includes(window.location.pathname);
+
+        if (isPublicRoute) {
+            // On public routes, don't fetch user data to avoid 401 errors
+            setLoading(false);
+        } else {
+            // On protected routes, fetch user data to check authentication
+            fetchUser(true);
+        }
+    }, []);
 
     const value = {
         user,
-        token,
         login,
         register,
         logout,
         updateProfile,
-        setAuthData,
         loading,
         isAuthenticated: !!user && !loggingOut,
         loggingOut,

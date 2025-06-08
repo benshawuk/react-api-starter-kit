@@ -5,6 +5,8 @@ import { type BreadcrumbItem } from '@/types';
 import { Transition } from '@headlessui/react';
 import { FormEventHandler, useRef, useState } from 'react';
 
+import { authenticatedFetch } from '@/lib/auth-utils';
+
 import HeadingSmall from '@/components/heading-small';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,13 +46,8 @@ export default function Password() {
         setErrors({});
 
         try {
-            const response = await fetch('/api/password', {
+            const response = await authenticatedFetch('/api/password', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-                },
                 body: JSON.stringify(data),
             });
 

@@ -17,7 +17,7 @@ type LoginForm = {
 };
 
 export default function Login() {
-    const { setAuthData } = useAuth();
+    const { login } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [data, setData] = useState<LoginForm>({
@@ -37,45 +37,20 @@ export default function Login() {
         setErrors({});
 
         try {
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                },
-                body: JSON.stringify({
-                    email: data.email,
-                    password: data.password,
-                }),
-            });
+            // Use the auth context login method which handles session-based auth
+            await login(data.email, data.password);
 
-            const responseData = await response.json();
-
-            if (!response.ok) {
-                if (response.status === 422 && responseData.errors) {
-                    // Handle Laravel validation errors
-                    const formattedErrors: Record<string, string> = {};
-                    Object.keys(responseData.errors).forEach((key) => {
-                        const errorArray = responseData.errors[key];
-                        formattedErrors[key] = Array.isArray(errorArray) ? errorArray[0] : errorArray;
-                    });
-                    setErrors(formattedErrors);
-                } else {
-                    setErrors({
-                        email: responseData.message || 'Login failed',
-                    });
-                }
-                return;
-            }
-
-            // Login successful - update auth state and redirect
-            const { token, user } = responseData;
-            setAuthData(token, user);
+            // Success - navigate to dashboard
             navigate('/dashboard');
-        } catch {
-            setErrors({
-                email: 'Network error occurred',
-            });
+        } catch (error: any) {
+            if (error.errors) {
+                // Handle validation errors from auth context
+                setErrors(error.errors);
+            } else {
+                setErrors({
+                    email: error.message || 'Login failed',
+                });
+            }
         } finally {
             setProcessing(false);
         }
